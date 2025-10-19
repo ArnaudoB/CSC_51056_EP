@@ -103,7 +103,7 @@ int main(){
     std::vector<float> vals(n);
     for(size_t i=0; i<n; i++){
         dims[i] = F[i].dim;
-        vals[i] = F[i].dim;
+        vals[i] = F[i].val;
     }
     auto B = boundary_matrix_dense(F);
     gaussian_elim_dense(B);
