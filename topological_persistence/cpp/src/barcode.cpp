@@ -1,4 +1,6 @@
 #include <vector>
+#include <string>
+#include <iostream>
 #include <cstdint>
 #include <array>
 #include <fstream>
@@ -55,21 +57,14 @@ void write_barcode_from_reduced_dense(const std::vector<std::vector<uint8_t>>& R
 // sparse version 
 
 
-void write_barcode_from_reduced_sparse(const std::vector<std::array<std::size_t,2>>& entries,
-                                    const std::vector<int>& dim,
-                                    const std::vector<float>& val,
-                                    const std::string& out_path)
+void write_barcode_from_reduced_sparse(const std::vector<std::vector<int>>& cols,
+                                       const std::vector<int>& dim,
+                                       const std::vector<float>& val,
+                                       const std::string& out_path)
 {
-    if (entries.empty()) { std::ofstream(out_path).close(); return; }
+    const int n = cols.size();
 
-    // infer n 
-    std::size_t n = 0;
-    for (const auto& e : entries) n = std::max(n, std::max(e[0], e[1]) + 1);
-
-    // build per-column row lists (sorted)
-    std::vector<std::vector<std::size_t>> cols(n);
-    for (const auto& e : entries) cols[e[1]].push_back(e[0]);
-    for (auto& c : cols) std::sort(c.begin(), c.end());
+    if (n == 0) { std::ofstream(out_path).close(); return; }
 
     std::vector<bool> row_used_as_pivot(n, false);
 
@@ -77,39 +72,61 @@ void write_barcode_from_reduced_sparse(const std::vector<std::array<std::size_t,
     ofs.setf(std::ios::fixed, std::ios::floatfield);
     ofs.precision(6);
 
-    // paired columns : finite intervals
-    for (std::size_t j = 0; j < n; ++j) {
+    // paired columns (finite intervals)
+    for (int j = 0; j < n; ++j) {
         if (!cols[j].empty()) {
-            std::size_t i = cols[j].back();  // lowest = largest row
+            const int i = cols[j].back();      // lowest = largest row index
             row_used_as_pivot[i] = true;
-            int k = dim[j] - 1;
-            ofs << k << ' ' << val[i] << ' ' << val[j] << '\n';
+
+            const int k = dim[j] - 1;          // homology dimension for the pair
+            ofs << k << ' ' << val[i]
+                << ' ' << val[j] << '\n';
         }
     }
-    // zero columns not used as pivot-row : infinite intervals
+
+    // unpaired zero columns (infinite intervals)
     for (std::size_t j = 0; j < n; ++j) {
         if (cols[j].empty() && !row_used_as_pivot[j]) {
-            int k = dim[j];
+            const int k = dim[j];
             ofs << k << ' ' << val[j] << ' ' << "inf" << '\n';
         }
     }
     ofs.close();
 }
 
-int main(){
-    auto F = read_filtration("./src/filtration.txt");
+int run_barcode(const std::string& filtration_path, const std::string& output_path) {
+    std::cout << "Reading filtration..." << std::endl;
+    auto F = read_filtration(filtration_path);
+    std::cout << "Done." << std::endl;
+
+    std::cout << "Parsing dimensions and values..." << std::endl;
     size_t n = F.size();
     std::vector<int> dims(n);
     std::vector<float> vals(n);
-    for(size_t i=0; i<n; i++){
+    for (size_t i = 0; i < n; i++) {
         dims[i] = F[i].dim;
         vals[i] = F[i].val;
     }
-    auto B = boundary_matrix_dense(F);
-    gaussian_elim_dense(B);
-    write_barcode_from_reduced_dense(B, dims, vals, "./barcode_dense.txt");
+    std::cout << "Done." << std::endl;
 
-    auto B_sparse = boundary_matrix_sparse(F);
+    std::cout << "Computing the boundary matrix..." << std::endl;
+    auto B_sparse = boundary_matrix_sparse_fast(F);
+    std::cout << "Done." << std::endl;
+
+    std::cout << "Reducing the boundary matrix..." << std::endl;
     auto B_sparse_reduced = gaussian_elim_sparse(B_sparse);
-    write_barcode_from_reduced_sparse(B_sparse_reduced, dims, vals, "./barcode_sparse.txt");
+    std::cout << "Done." << std::endl;
+
+    std::cout << "Computing the barcodes..." << std::endl;
+    write_barcode_from_reduced_sparse(B_sparse_reduced, dims, vals, output_path);
+    std::cout << "Done." << std::endl;
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <filtration.txt> <output.txt>\n";
+        return 1;
+    }
+    return run_barcode(argv[1], argv[2]);
 }

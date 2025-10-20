@@ -47,9 +47,9 @@ void gaussian_elim_dense(std::vector<std::vector<uint8_t>>& M) {
 
 
 // symmetric difference of two sorted vectors
-static inline std::vector<std::size_t>
-symdiff(const std::vector<std::size_t>& a, const std::vector<std::size_t>& b) {
-    std::vector<std::size_t> r;
+static inline std::vector<int>
+symdiff(const std::vector<int>& a, const std::vector<int>& b) {
+    std::vector<int> r;
     r.reserve(a.size() + b.size());
     std::size_t i = 0, j = 0;
     while (i < a.size() && j < b.size()) {
@@ -63,59 +63,37 @@ symdiff(const std::vector<std::size_t>& a, const std::vector<std::size_t>& b) {
 }
 
 
-std::vector<std::array<std::size_t, 2>> gaussian_elim_sparse(const std::vector<std::array<std::size_t, 2>>& entries)
+std::vector<std::vector<int>>
+gaussian_elim_sparse(std::vector<std::vector<int>> cols)
 {
-    if (entries.empty()) return {};
+    const size_t n = cols.size();
+    if (n == 0) return cols;
 
-    // infer size
-    std::size_t n = 0;
-    for (const auto& e : entries)
-        n = std::max(n, std::max(e[0], e[1]) + 1);
+    const int NONE = -1;
+    std::vector<int> pivot_of_row(n, NONE); // pivot_of_row[r] = column owning pivot at row r
 
-    // build columns: cols[j] = row indices with a 1 in column j
-    std::vector<std::vector<std::size_t>> cols(n);
-    cols.reserve(n);
-    for (const auto& e : entries) cols[e[1]].push_back(e[0]);
-
-    // sort each column so we can take lowest = back() and do linear-time xor
-    for (auto& c : cols) std::sort(c.begin(), c.end());
-
-    const std::size_t NONE = std::numeric_limits<std::size_t>::max();
-    // which column has its pivot at row r (or NONE)
-    std::vector<std::size_t> pivot_of_row(n, NONE);
-
-    // left→right reduction: enforce unique lowest 1 per nonzero column
-    for (std::size_t j = 0; j < n; ++j) {
-        auto low = [&]() -> std::size_t {
-            return cols[j].empty() ? NONE : cols[j].back(); // lowest = largest row
+    for (int j = 0; j < n; ++j) {
+        auto low = [&]() -> int {
+            return cols[j].empty() ? NONE : cols[j].back(); // "lowest" = largest row index
         };
 
-        std::size_t r = low();
+        int r = low();
         while (r != NONE) {
-            const std::size_t k = pivot_of_row[r];
-            if (k == NONE) break;                // unique pivot row reached
-            cols[j] = symdiff(cols[j], cols[k]);
-            r = low();                           // recompute lowest 1
+            const int k = pivot_of_row[r];
+            if (k == NONE) break;                 // free pivot row found
+            cols[j] = symdiff(cols[j], cols[k]); // XOR columns
+            r = low();                             // recompute lowest 1
         }
-        if (r != NONE) pivot_of_row[r] = j;      // register pivot for this row
+        if (r != NONE) pivot_of_row[r] = j; // record pivot
     }
 
-    // rebuild as sparse
-    std::vector<std::array<std::size_t, 2>> out;
-    std::size_t nnz = 0;
-    for (const auto& c : cols) nnz += c.size();
-    out.reserve(nnz);
-
-    for (std::size_t j = 0; j < n; ++j)
-        for (std::size_t i : cols[j]) out.push_back({i, j});
-
-    return out;
+    return cols; // reduced columns, same sparse format
 }
 
 
 // int main() {
-//     auto F = read_filtration("./src/filtration.txt");
-//     auto B = boundary_matrix_dense(F);
+//     auto F = read_filtration("./src/filtrations/filtration_test.txt");
+//     auto B = boundary_matrix_sparse_fast(F);
 //     std::cout << "Boundary matrix size: " << B.size() << " x "
 //               << (B.empty() ? 0 : B[0].size()) << "\n";
 
@@ -123,7 +101,7 @@ std::vector<std::array<std::size_t, 2>> gaussian_elim_sparse(const std::vector<s
 //         for (uint8_t v : row) std::cout << int(v);
 //         std::cout << "\n";
 //     }
-//     gaussian_elim_dense(B);
+//     gaussian_elim_sparse(B);
 //     std::cout << "Boundary matrix reduced size: " << B.size() << " x "
 //               << (B.empty() ? 0 : B[0].size()) << "\n";
 
@@ -132,13 +110,13 @@ std::vector<std::array<std::size_t, 2>> gaussian_elim_sparse(const std::vector<s
 //         std::cout << "\n";
 //     }
 
-//     auto B_sparse = boundary_matrix_sparse(F);
+//     auto B_sparse = boundary_matrix_dense(F);
 
-//     auto B_sparse_reduced = gaussian_elim_sparse(B_sparse);
-//     std::cout << "Nonzero entries: " << B_sparse_reduced.size() << "\n";
-//     for (auto [i, j] : B_sparse_reduced) {
-//         std::cout << "(" << i << ", " << j << ")\n";
-//     };
+//     gaussian_elim_dense(B_sparse);
+//     for (const auto& row : B) {
+//         for (uint8_t v : row) std::cout << int(v);
+//         std::cout << "\n";
+//     }
 
 //     return 0;
 // }
